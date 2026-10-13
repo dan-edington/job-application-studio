@@ -1,0 +1,6 @@
+{
+  "id": "editorial", "name": "Classic editorial", "kind": "both",
+  "description": "Traditional serif typography with a charcoal accent.",
+  "instructions": "Use a concise, traditional professional tone with evidence-led bullets. Keep the CV to approximately two pages and the cover letter to one page.",
+  "theme": { "accent": "#343e45", "fontFamily": "Times-Roman", "fontSize": 10.5, "margin": 46 }
+}

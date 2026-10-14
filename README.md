@@ -66,9 +66,13 @@ Changing the API port also requires updating Vite's proxy target. Run commands f
 
 ## CV writing and layout
 
+Built-in AI prompts live in [`prompts/`](prompts/README.md), with comments explaining what each prompt does and where it is used. Edit those files to change the shared system rules, job analysis, drafting, revisions, repair instructions or output-field guidance.
+
 CVs are tailored for a 20-second top-to-bottom scan. Keywords mean role-specific terms explicitly present in the job specification, primarily technologies such as JavaScript, CSS, AWS and CI/CD. Each employment entry leads with as many relevant, supported technologies as fit naturally; unrelated technologies are kept out of early bullets. Technologies are never transferred between employers simply to increase keyword coverage.
 
 Each role's bullets are based on `employment[i].responsibilitiesAndAchievements`. These items are unordered: the agent selects, rewrites and, where supported, blends them by relevance to the role. It cross-checks that employment entry's `keywords` against the job specification. Skills unrelated to the specification can appear only in later bullets. Technology matching ignores case, but generated CV wording follows the exact casing from the posting, including in Core Skills (for example, `JavaScript` rather than `Javascript`). Job analysis preserves that casing for generation and revisions.
+
+Role-level `keywords` are confirmed technologies used and activities performed in that employment, not just search hints. The agent combines them with the fuller achievement descriptions and weaves job-matching terms into the most appropriate bullets, even where the descriptions do not repeat the term. For example, Redux should appear in a relevant bullet when both the role inventory and posting include it. The system prompt makes coverage and ordering a critical priority: the earliest bullets must carry the most distinct matching keywords, and the agent checks each role for omissions and ordering before returning the CV. Specific project relationships and outcomes must still be supported by the facts.
 
 The headline is selected from `personal.headlineOptions` to best match the role name, with Developer/Engineer and Frontend/Front end wording adapted to the posting. The structured output schema restricts selection to those master-file options and caps each employment entry at five bullets. Historical employment titles remain canonical.
 
@@ -107,6 +111,7 @@ server/
     job.ts                 URL retrieval and structured/visible text extraction
     models.ts              OpenAI SDK model discovery
     templates.ts           Template discovery and validation
+prompts/                   Editable AI instructions with usage comments and a guide
 templates/                 Optional user-provided JSON templates
 tests/                     Service, API and browser tests
 ```

@@ -1,3 +1,4 @@
+import { standardTemplatePrompt } from '../../prompts/standardTemplatePrompt.js';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { templateSchema, type Template } from '../../shared/schema.js';
@@ -7,8 +8,7 @@ export const standardTemplate: Template = templateSchema.parse({
   name: 'Studio standard',
   kind: 'both',
   description: 'A clean, single-column layout with a restrained green accent.',
-  instructions:
-    'A concise, ATS-friendly CV. Aim for two pages. Keep the cover letter to one page.',
+  instructions: standardTemplatePrompt,
 });
 export async function loadTemplates() {
   const templates = [standardTemplate];

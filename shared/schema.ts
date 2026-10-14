@@ -1,3 +1,10 @@
+import {
+  jobKeywordsGuidance,
+  cvHeadlineGuidance,
+  cvContactGuidance,
+  experienceBulletsGuidance,
+  coverLetterParagraphGuidance,
+} from '../prompts/outputGuidance.js';
 import { z } from 'zod';
 
 const text = z.string().min(1).max(12000);
@@ -7,24 +14,14 @@ export const jobSchema = z.object({
   location: z.string(),
   summary: text,
   requirements: z.array(text).max(20),
-  keywords: z
-    .array(text)
-    .max(50)
-    .describe(
-      'Role-specific terms explicitly present in the job specification, primarily technologies such as JavaScript, CSS, AWS and CI/CD. Preserve the exact casing in the posting. Exclude generic recruiting language.',
-    ),
+  keywords: z.array(text).max(50).describe(jobKeywordsGuidance),
 });
 export const documentsSchema = z.object({
   cv: z.object({
     name: text,
-    headline: text.describe(
-      'The closest matching option from personal.headlineOptions for the job-spec role title.',
-    ),
+    headline: text.describe(cvHeadlineGuidance),
     location: text,
-    contact: z
-      .array(text)
-      .max(10)
-      .describe('Contact details and URLs only; location has its own field.'),
+    contact: z.array(text).max(10).describe(cvContactGuidance),
     skills: z
       .array(z.object({ category: text, items: z.array(text).max(30) }))
       .max(10),
@@ -40,9 +37,7 @@ export const documentsSchema = z.object({
             .array(text)
             .min(1)
             .max(5)
-            .describe(
-              'At most five recruiter-readable what/why/outcome bullets per role, based on that employment entry’s unordered responsibilitiesAndAchievements. Rephrase or blend supported items and cross-check its keywords against the job spec. Lead with relevant skills; unrelated skills belong only in later bullets. Match technology casing to the job spec. No quantified outcomes.',
-            ),
+            .describe(experienceBulletsGuidance),
         }),
       )
       .max(12),
@@ -54,11 +49,7 @@ export const documentsSchema = z.object({
     subject: text,
     greeting: text,
     paragraphs: z
-      .array(
-        text.describe(
-          'A finished, ready-to-send paragraph in the candidate’s voice. No internal labels, schema keys, placeholders or instructions to edit text later.',
-        ),
-      )
+      .array(text.describe(coverLetterParagraphGuidance))
       .min(2)
       .max(6),
     signoff: text,

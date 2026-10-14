@@ -37,24 +37,24 @@ The optional **Cover letter personalisation** box lets you add personal interest
 
 ## Configuration
 
-| Variable | Purpose |
-| --- | --- |
-| `OPENAI_API_KEY` | Server-side OpenAI API key |
-| `OPENAI_MODEL` | Optional preferred selection when present in the discovered or fallback list; default `gpt-5-nano` |
-| `PORT`, `HOST` | API port and bind address, defaults `3001` and `127.0.0.1` |
-| `CAREER_MASTER_PATH` | Path to canonical career JSON |
-| `TEMPLATES_DIR` | Template directory, default `./templates` |
-| `DATABASE_PATH` | SQLite location, default `./data/applications.sqlite` |
+| Variable             | Purpose                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`     | Server-side OpenAI API key                                                                         |
+| `OPENAI_MODEL`       | Optional preferred selection when present in the discovered or fallback list; default `gpt-5-nano` |
+| `PORT`, `HOST`       | API port and bind address, defaults `3001` and `127.0.0.1`                                         |
+| `CAREER_MASTER_PATH` | Path to canonical career JSON                                                                      |
+| `TEMPLATES_DIR`      | Template directory, default `./templates`                                                          |
+| `DATABASE_PATH`      | SQLite location, default `./data/applications.sqlite`                                              |
 
 The OpenAI SDK fetches every model available to your API key from `/v1/models`. Successful results are cached for five minutes and refreshed periodically while the app is open. Model discovery is supported, but can fail because of an invalid key, restricted permissions, or network issues. Errors identify authentication (401), permissions (403), or rate limiting (429) without exposing the key.
 
 If discovery fails, returns no models, or no key is configured, the app shows this built-in list:
 
-| Model | Input / 1M tokens | Output / 1M tokens |
-| --- | --- | --- |
-| `gpt-5-nano` (default) | $0.05 | $0.40 |
-| `gpt-4.1-nano` | $0.10 | $0.40 |
-| `gpt-5-mini` | $0.25 | $2.00 |
+| Model                  | Input / 1M tokens | Output / 1M tokens |
+| ---------------------- | ----------------- | ------------------ |
+| `gpt-5-nano` (default) | $0.05             | $0.40              |
+| `gpt-4.1-nano`         | $0.10             | $0.40              |
+| `gpt-5-mini`           | $0.25             | $2.00              |
 
 Standard token rates checked on 13 October 2026: [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), [GPT-4.1 nano](https://developers.openai.com/api/docs/models/gpt-4.1-nano), [GPT-5 mini](https://developers.openai.com/api/docs/models/gpt-5-mini). GPT-5 nano has the lowest input rate and joint-lowest output rate in this list. Actual request cost depends on token usage, including reasoning tokens. These older models are marked deprecated in the catalogue; availability still depends on the account and OpenAI's retirement schedule. Review this fallback list as models are retired.
 
@@ -74,7 +74,9 @@ The headline is selected from `personal.headlineOptions` to best match the role 
 
 Every bullet uses recruiter-friendly what/why/outcome wording. Outcomes stay qualitative, even where the master contains verified metrics. Dates and technology names such as 3D and WCAG 2.1 are retained. The CV has no summary or separate projects section; relevant projects can be folded into experience only where employer attribution is verified.
 
-Both previews and PDFs use a centred name, role, location and contact header. Name, role and location have separate lines; contact details and URLs use ` | ` separators. Body sections are **Experience → Education → Core Skills**. The same rules apply when revising documents and override template structure. The career master's `writingPreferences.cvPrinciples` records these preferences too.
+Both previews and PDFs use a centred name, role, location and contact header. Name, role and location have separate lines; contact details and URLs use `|` separators. Body sections are **Experience → Education → Core Skills**. The same rules apply when revising documents and override template structure. The career master's `writingPreferences.cvPrinciples` records these preferences too.
+
+Employment dates display as full month names and years (for example, `May 2022 – June 2024`) in previews and PDFs, including existing saved applications. The backend retains the canonical dates from the career master; the display layer formats them without relying on the model. Year-only dates and labels such as `Present` are kept as supplied.
 
 Existing saved CVs display in the new layout, including those whose location was stored in the old contact format. Their stored bullet wording is preserved until a revision or fresh generation is requested. Generated wording still needs human review for factual accuracy and compliance with the writing rules.
 
@@ -113,17 +115,17 @@ React handles the UI, Tailwind CSS and custom component styles handle presentati
 
 Routes:
 
-| Method | Route | Behaviour |
-| --- | --- | --- |
-| GET | `/api/settings` | Profile status, models and templates |
-| GET | `/api/applications` | Latest 100 saved applications |
-| GET | `/api/applications/:id` | Full saved application |
-| DELETE | `/api/applications/:id` | Delete with a `{ version }` body and conflict protection |
-| POST | `/api/applications` | Analyse role, generate and save |
-| POST | `/api/applications/:id/revise` | Revise with version conflict protection |
-| POST | `/api/applications/:id/regenerate` | Replace both drafts using `{ model, version }`; preserve ID, URL and templates |
-| GET | `/api/applications/:id/pdf/:kind` | `cv` or `coverLetter`; `download=1` to download |
-| GET | `/api/health` | Health check |
+| Method | Route                              | Behaviour                                                                      |
+| ------ | ---------------------------------- | ------------------------------------------------------------------------------ |
+| GET    | `/api/settings`                    | Profile status, models and templates                                           |
+| GET    | `/api/applications`                | Latest 100 saved applications                                                  |
+| GET    | `/api/applications/:id`            | Full saved application                                                         |
+| DELETE | `/api/applications/:id`            | Delete with a `{ version }` body and conflict protection                       |
+| POST   | `/api/applications`                | Analyse role, generate and save                                                |
+| POST   | `/api/applications/:id/revise`     | Revise with version conflict protection                                        |
+| POST   | `/api/applications/:id/regenerate` | Replace both drafts using `{ model, version }`; preserve ID, URL and templates |
+| GET    | `/api/applications/:id/pdf/:kind`  | `cv` or `coverLetter`; `download=1` to download                                |
+| GET    | `/api/health`                      | Health check                                                                   |
 
 Services are separate from routes and persistence so adding providers, background jobs, authentication or another database does not require rebuilding the UI. This first version runs generation within bounded HTTP requests; multi-user deployments should introduce a durable queue and job-status endpoints.
 
@@ -140,6 +142,17 @@ Services are separate from routes and persistence so adding providers, backgroun
 This is a **single-user local application**, bound to loopback by default. Add authentication, per-user data isolation, TLS, appropriate origin policy, and rate-limit configuration before exposing it to other users or the public internet. No hosting deployment is included.
 
 ## Validation and production build
+
+Formatting is automated with Prettier and ESLint Stylistic. Prettier expands JSX, uses one attribute per line for elements with multiple attributes, and applies two-space indentation. ESLint adds blank lines around function declarations, function-valued variables and class methods while allowing ordinary local variables to remain grouped.
+
+```sh
+npm run format        # Apply function spacing, then format the project
+npm run format:check  # Check both spacing and formatting without changing files
+npm run lint          # Check ESLint rules only
+npm run lint:fix      # Apply ESLint fixes only
+```
+
+VS Code workspace settings enable formatting and ESLint fixes on save when the recommended Prettier and ESLint extensions are installed. Generated files, local data, environment files, the lockfile and the career master are excluded from Prettier.
 
 ```sh
 npm run typecheck

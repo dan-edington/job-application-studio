@@ -14,19 +14,31 @@ const draftingArtefacts = [
   /\{\{[^{}\n]+\}\}/,
 ];
 
-export function documentQualityIssues(documents: Pick<Documents, 'cv' | 'coverLetter'>, kind?: 'cv' | 'coverLetter'): string[] {
+export function documentQualityIssues(
+  documents: Pick<Documents, 'cv' | 'coverLetter'>,
+  kind?: 'cv' | 'coverLetter',
+): string[] {
   const issues: string[] = [];
+
   function visit(value: unknown, path: string) {
     if (typeof value === 'string') {
-      if (!value.trim() || draftingArtefacts.some(pattern => pattern.test(value))) issues.push(path);
+      if (
+        !value.trim() ||
+        draftingArtefacts.some((pattern) => pattern.test(value))
+      )
+        issues.push(path);
     } else if (Array.isArray(value)) {
       value.forEach((item, index) => visit(item, `${path}[${index}]`));
     } else if (value && typeof value === 'object') {
-      for (const [key, item] of Object.entries(value)) visit(item, `${path}.${key}`);
+      for (const [key, item] of Object.entries(value))
+        visit(item, `${path}.${key}`);
     }
   }
-  for (const documentKind of kind ? [kind] : ['cv', 'coverLetter'] as const) visit(documents[documentKind], documentKind);
+
+  for (const documentKind of kind ? [kind] : (['cv', 'coverLetter'] as const))
+    visit(documents[documentKind], documentKind);
   return issues;
 }
 
-export const documentQualityMessage = 'This document contains unfinished drafting text. Regenerate the application or request a revision before downloading it.';
+export const documentQualityMessage =
+  'This document contains unfinished drafting text. Regenerate the application or request a revision before downloading it.';

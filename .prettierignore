@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+coverage/
+test-results/
+playwright-report/
+.env
+.env.*
+package-lock.json
+dan_edington_career_master.json

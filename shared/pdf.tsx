@@ -25,6 +25,7 @@ export function ApplicationPdf({
       fontWeight: 'bold',
       color: theme.accent,
       marginBottom: 4,
+      lineHeight: 1.45,
     },
     headline: { fontSize: 12, marginBottom: 4 },
     location: { fontSize: 9, color: '#58615e', marginBottom: 6 },

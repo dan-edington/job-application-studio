@@ -82,7 +82,7 @@ export const templateSchema = z.object({
       accent: '#214b43',
       fontFamily: 'Helvetica',
       fontSize: 10,
-      margin: 42,
+      margin: 30,
     }),
 });
 const personalisation = z.string().trim().max(3000);

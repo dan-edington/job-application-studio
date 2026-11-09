@@ -1,6 +1,12 @@
-# Application Studio
+# Job Application Studio
 
-A local web app that turns a job posting and `dan_edington_career_master.json` into a tailored CV, cover letter, or both. Review your selected documents, ask for changes, and download individual A4 PDFs.
+A local web app that turns a job posting and a career data JSON file into a tailored CV, cover letter, or both. Review your selected documents, ask for changes, and download individual A4 PDFs.
+
+## 🤖 Built with Codex
+
+This project was built using OpenAI Codex as an AI coding assistant. I wanted to experiment with how far I could take AI-assisted development, from initial requirements through to a working full-stack application.
+
+Codex handled much of the implementation, with me guiding the requirements, architecture, functionality and iterations throughout the process.
 
 ## Run locally
 
@@ -9,13 +15,15 @@ Use **Node.js 24 LTS** (minimum 22.13; the backend uses built-in SQLite).
 ```sh
 npm install
 cp .env.example .env  # only if .env does not already exist
+cp example_career_master.json career_master.json  # only if .env does not already exist
 ```
 
-Add your key to `.env`:
+Add your key and career JSON to `.env`:
 
 ```dotenv
 OPENAI_API_KEY=your-key-here
 OPENAI_MODEL=gpt-5-nano
+CAREER_MASTER_PATH=career_master.json
 ```
 
 ```sh

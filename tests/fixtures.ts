@@ -1,6 +1,6 @@
-import type { Application } from '../shared/schema';
+import type { Application, Documents } from '../shared/schema';
 import { standardTemplate } from '../server/services/templates';
-export const fixture: Application = {
+export const fixture: Application & { documents: Documents } = {
   id: 'test-application',
   url: 'https://example.com/careers/frontend',
   model: 'gpt-5-mini',
@@ -48,6 +48,15 @@ export const fixture: Application = {
         },
       ],
       education: ['HND Graphic Design, City College, Manchester, 2006–2008'],
+      personalProjects: [
+        {
+          sourceId: 'tonygl',
+          name: 'TonyGL',
+          repositoryUrl: 'https://github.com/dan-edington/TonyGL',
+          description:
+            'Built a TypeScript WebGPU rendering library to learn modern graphics APIs and renderer architecture.',
+        },
+      ],
     },
     coverLetter: {
       date: '13 October 2026',

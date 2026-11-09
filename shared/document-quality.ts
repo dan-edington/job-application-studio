@@ -1,4 +1,4 @@
-import type { Documents } from './schema.js';
+import type { ApplicationDocuments } from './schema.js';
 
 // Check finished document text, not evidence/cautions where review instructions belong.
 // These deliberately targeted rules catch drafting artefacts without banning ordinary
@@ -15,7 +15,7 @@ const draftingArtefacts = [
 ];
 
 export function documentQualityIssues(
-  documents: Pick<Documents, 'cv' | 'coverLetter'>,
+  documents: Pick<ApplicationDocuments, 'cv' | 'coverLetter'>,
   kind?: 'cv' | 'coverLetter',
 ): string[] {
   const issues: string[] = [];

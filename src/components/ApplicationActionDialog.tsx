@@ -1,5 +1,11 @@
 import { LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
-import type { Application } from '../../shared/schema';
+import { useState } from 'react';
+import type {
+  Application,
+  DocumentSelection as Selection,
+} from '../../shared/schema';
+import { savedDocumentSelection } from '../../shared/document-selection';
+import { DocumentSelection } from './DocumentSelection';
 import { Modal } from './Modal';
 
 export function ApplicationActionDialog({
@@ -22,10 +28,13 @@ export function ApplicationActionDialog({
   pending: boolean;
   error?: Error | null;
   onModelChange: (model: string) => void;
-  onConfirm: () => void;
+  onConfirm: (selection: Selection) => void;
   onClose: () => void;
 }) {
   const deleting = action === 'delete';
+  const [selection, setSelection] = useState(() =>
+    savedDocumentSelection(application.documents),
+  );
   return (
     <Modal
       labelledBy="application-action-title"
@@ -52,11 +61,17 @@ export function ApplicationActionDialog({
         </p>
         <p>
           {deleting
-            ? 'This permanently removes the saved application, both documents and its revision history. Files you already downloaded are kept.'
-            : 'Create a fresh CV and cover letter using the saved role analysis, your latest career master, current writing rules and this application’s saved templates. This replaces both drafts and clears their revision history only after generation succeeds.'}
+            ? 'This permanently removes the saved application, its documents and revision history. Files you already downloaded are kept.'
+            : 'Create the selected documents using the saved role analysis, your latest career master, current writing rules and this application’s saved templates. This replaces the application’s documents with your selection and clears revision history only after generation succeeds.'}
         </p>
         {!deleting && (
           <div className="action-model">
+            <DocumentSelection
+              id="regenerate-documents"
+              value={selection}
+              onChange={setSelection}
+              disabled={pending}
+            />
             <label
               htmlFor="regenerate-model"
               className="field-label"
@@ -103,7 +118,7 @@ export function ApplicationActionDialog({
           <button
             className={deleting ? 'danger-button' : 'primary-button'}
             disabled={pending || (!deleting && (!configured || !model))}
-            onClick={onConfirm}
+            onClick={() => onConfirm(selection)}
           >
             {pending ? (
               <LoaderCircle

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { DocumentSelection } from '../shared/schema';
 type State = {
   activeId: string | null;
   url: string;
@@ -8,6 +9,7 @@ type State = {
   model: string;
   cvTemplate: string;
   letterTemplate: string;
+  documentSelection: DocumentSelection;
   set: (state: Partial<Omit<State, 'set' | 'newApplication'>>) => void;
   newApplication: () => void;
 };
@@ -21,6 +23,7 @@ export const useStudio = create<State>()(
       model: '',
       cvTemplate: 'standard',
       letterTemplate: 'standard',
+      documentSelection: 'both',
       set: (state) => set(state),
       newApplication: () =>
         set({
@@ -48,6 +51,7 @@ export const useStudio = create<State>()(
         model: state.model,
         cvTemplate: state.cvTemplate,
         letterTemplate: state.letterTemplate,
+        documentSelection: state.documentSelection,
       }),
     },
   ),

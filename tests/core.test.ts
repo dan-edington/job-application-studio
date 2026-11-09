@@ -61,6 +61,8 @@ describe('job extraction and request boundaries', () => {
         3,
       );
     expect(await readJob('https://example.com', text)).toBe(text.trim());
+    expect(await readJob('', text)).toBe(text.trim());
+    await expect(readJob('', '')).rejects.toThrow('URL or paste');
     await expect(readJob('https://example.com', 'too short')).rejects.toThrow(
       'at least 100',
     );

@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { config, AppError } from '../config.js';
-import type { Documents, Job } from '../../shared/schema.js';
+import type {
+  ApplicationDocuments,
+  Applicant,
+  Job,
+} from '../../shared/schema.js';
 
 const careerSchema = z.object({
   personal: z.object({
@@ -29,7 +33,18 @@ const careerSchema = z.object({
     }),
   ),
   personalProjects: z.array(
-    z.object({ id: z.string(), name: z.string() }).passthrough(),
+    z
+      .object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().min(1),
+        repositoryUrl: z
+          .string()
+          .url()
+          .refine((url) => /^https?:\/\//i.test(url))
+          .optional(),
+      })
+      .passthrough(),
   ),
   selectedClients: z.array(z.string()),
   clientAttributionNote: z.string(),
@@ -54,67 +69,114 @@ export async function loadCareer() {
   }
 }
 // The allowlisted schema excludes career preferences, salary and other private top-level fields.
-export function enforceFacts(
-  documents: Documents,
+export function enforceFacts<T extends ApplicationDocuments>(
+  documents: T,
   career: Career,
   job: Pick<Job, 'title'>,
-): Documents {
+): T {
   const output = structuredClone(documents);
   const ids = new Set(
     [...career.employment, ...career.personalProjects].map((item) => item.id),
   );
-  for (const experience of output.cv.experience) {
-    const source = career.employment.find(
-      (item) => item.id === experience.sourceId,
+  const cv = output.cv;
+  if (cv) {
+    for (const experience of cv.experience) {
+      const source = career.employment.find(
+        (item) => item.id === experience.sourceId,
+      );
+      if (!source)
+        throw new AppError(
+          502,
+          'The AI returned an unsupported employment claim. Please generate again.',
+        );
+      Object.assign(experience, {
+        employer: source.employer,
+        title: source.title,
+        start: source.start,
+        end: source.end,
+      });
+    }
+    cv.personalProjects ??= [];
+    for (const project of cv.personalProjects) {
+      const source = career.personalProjects.find(
+        (item) => item.id === project.sourceId,
+      );
+      if (!source)
+        throw new AppError(
+          502,
+          'The AI returned an unsupported personal project. Please generate again.',
+        );
+      project.name = source.name;
+      // URLs are canonical metadata, never model-authored content.
+      if (source.repositoryUrl) project.repositoryUrl = source.repositoryUrl;
+      else delete project.repositoryUrl;
+    }
+    const tonygl = career.personalProjects.find(
+      (project) => project.id === 'tonygl',
     );
-    if (!source)
+    if (
+      tonygl &&
+      !cv.personalProjects.some((project) => project.sourceId === tonygl.id)
+    )
+      cv.personalProjects.unshift({
+        sourceId: tonygl.id,
+        name: tonygl.name,
+        description: tonygl.description,
+        ...(tonygl.repositoryUrl
+          ? { repositoryUrl: tonygl.repositoryUrl }
+          : {}),
+      });
+
+    const normaliseHeadline = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/\bdeveloper\b/g, 'engineer')
+        .replace(/\bfront[ -]+end\b/g, 'frontend')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const selectedHeadline = career.personal.headlineOptions.find(
+      (option) => normaliseHeadline(option) === normaliseHeadline(cv.headline),
+    );
+    if (!selectedHeadline)
       throw new AppError(
         502,
-        'The AI returned an unsupported employment claim. Please generate again.',
+        'The AI returned a headline outside personal.headlineOptions. Please generate again.',
       );
-    Object.assign(experience, {
-      employer: source.employer,
-      title: source.title,
-      start: source.start,
-      end: source.end,
-    });
+    const jobProfession = job.title.match(/\b(?:developer|engineer)\b/i)?.[0];
+    const jobFrontend = job.title.match(/\bfront(?:[ -]+)?end\b/i)?.[0];
+    cv.headline = selectedHeadline
+      .replace(/\b(?:developer|engineer)\b/gi, (word) => jobProfession || word)
+      .replace(/\bfront(?:[ -]+)?end\b/gi, (word) => jobFrontend || word);
+    cv.name = career.personal.preferredName;
+    cv.location =
+      career.personal.location.city + ', ' + career.personal.location.country;
+    cv.contact = [
+      career.personal.email,
+      career.personal.phone,
+      ...Object.values(career.personal.links),
+    ];
   }
+  if (output.coverLetter)
+    output.coverLetter.name = career.personal.preferredName;
   if (output.evidence.some((item) => item.sourceIds.some((id) => !ids.has(id))))
     throw new AppError(
       502,
       'The AI cited an unknown source. Please generate again.',
     );
 
-  const normaliseHeadline = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/\bdeveloper\b/g, 'engineer')
-      .replace(/\bfront[ -]+end\b/g, 'frontend')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const selectedHeadline = career.personal.headlineOptions.find(
-    (option) =>
-      normaliseHeadline(option) === normaliseHeadline(output.cv.headline),
-  );
-  if (!selectedHeadline)
-    throw new AppError(
-      502,
-      'The AI returned a headline outside personal.headlineOptions. Please generate again.',
-    );
-  const jobProfession = job.title.match(/\b(?:developer|engineer)\b/i)?.[0];
-  const jobFrontend = job.title.match(/\bfront(?:[ -]+)?end\b/i)?.[0];
-  output.cv.headline = selectedHeadline
-    .replace(/\b(?:developer|engineer)\b/gi, (word) => jobProfession || word)
-    .replace(/\bfront(?:[ -]+)?end\b/gi, (word) => jobFrontend || word);
-  output.cv.name = career.personal.preferredName;
-  output.coverLetter.name = career.personal.preferredName;
-  output.cv.location =
-    career.personal.location.city + ', ' + career.personal.location.country;
-  output.cv.contact = [
-    career.personal.email,
-    career.personal.phone,
-    ...Object.values(career.personal.links),
-  ];
   return output;
+}
+
+// Contact details are factual metadata, not an AI-generated document.
+export function careerApplicant(career: Career): Applicant {
+  return {
+    name: career.personal.preferredName,
+    location: `${career.personal.location.city}, ${career.personal.location.country}`,
+    contact: [
+      career.personal.email,
+      career.personal.phone,
+      ...Object.values(career.personal.links),
+    ],
+  };
 }

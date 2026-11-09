@@ -168,6 +168,11 @@ export async function readJob(url: string, pastedText: string) {
       );
     return pastedText.trim();
   }
+  if (!url.trim())
+    throw new AppError(
+      400,
+      'Add a job posting URL or paste the full job description.',
+    );
   try {
     const text = extractJobText(await fetchPage(url));
     if (text.length < 150)

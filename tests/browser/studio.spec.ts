@@ -59,10 +59,328 @@ test('shows setup, template choices, and responsive empty previews', async ({
   });
 });
 
+test('accepts pasted text without a URL and asks for an unnamed company before generating', async ({
+  page,
+}) => {
+  const jobText =
+    'Senior frontend role building accessible React applications with TypeScript, collaborating with designers and backend engineers.';
+  let draft: Application | null = null;
+  let analysisRequests = 0;
+  let completionRequests = 0;
+  await page.route('**/api/settings', (route) =>
+    route.fulfill({
+      json: {
+        configured: true,
+        models: [fixture.model],
+        defaultModel: fixture.model,
+        templates: [fixture.templates.cv],
+        templateWarnings: [],
+        modelWarning: null,
+        profile: { name: 'Dan Edington', source: 'career.json', roleCount: 7 },
+      },
+    }),
+  );
+  await page.route('**/api/applications', (route) => {
+    if (route.request().method() === 'POST') {
+      analysisRequests++;
+      expect(route.request().postDataJSON()).toMatchObject({
+        url: '',
+        jobText,
+      });
+      return route.fulfill({
+        status: 202,
+        json: {
+          status: 'company_name_required',
+          token: '11111111-1111-4111-8111-111111111111',
+          jobTitle: fixture.job.title,
+        },
+      });
+    }
+    return route.fulfill({
+      json: draft
+        ? [{ id: draft.id, title: draft.job.title, company: draft.job.company }]
+        : [],
+    });
+  });
+  await page.route('**/api/applications/complete', (route) => {
+    completionRequests++;
+    expect(route.request().postDataJSON()).toEqual({
+      token: '11111111-1111-4111-8111-111111111111',
+      companyName: 'Running Studio',
+    });
+    if (completionRequests === 1)
+      return route.fulfill({
+        status: 502,
+        json: { error: 'Generation failed. Please retry.' },
+      });
+    draft = {
+      ...fixture,
+      url: '',
+      job: { ...fixture.job, company: 'Running Studio' },
+    };
+    return route.fulfill({ status: 201, json: draft });
+  });
+  await page.route('**/api/applications/test-application', (route) =>
+    route.fulfill({ json: draft }),
+  );
+  await page.goto('/');
+  const generate = page.getByRole('button', {
+    name: 'Generate application',
+    exact: true,
+  });
+  await expect(generate).toBeDisabled();
+  await page
+    .getByRole('button', { name: 'Have the description instead?' })
+    .click();
+  await page.getByLabel('Job description').fill(jobText);
+  await expect(page.getByLabel('Job posting URL')).toHaveValue('');
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('heading', { name: 'What’s the company name?' }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel('Company name')).toBeFocused();
+  await expect(
+    dialog.getByRole('button', { name: 'Continue generating' }),
+  ).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByLabel('Job description')).toHaveValue(jobText);
+  expect(completionRequests).toBe(0);
+  await generate.click();
+  await dialog.getByLabel('Company name').fill('   ');
+  await expect(
+    dialog.getByRole('button', { name: 'Continue generating' }),
+  ).toBeDisabled();
+  await dialog.getByLabel('Company name').fill('  Running Studio  ');
+  await dialog.getByRole('button', { name: 'Continue generating' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Please retry');
+  await expect(dialog.getByLabel('Company name')).toHaveValue(
+    '  Running Studio  ',
+  );
+  await dialog.getByRole('button', { name: 'Continue generating' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: 'Running Studio', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Original job posting' }),
+  ).toHaveCount(0);
+  expect(analysisRequests).toBe(2); // One cancelled analysis, one resumed without repeating it.
+  expect(completionRequests).toBe(2);
+});
+
+test('generates directly from pasted text when the company is known', async ({
+  page,
+}) => {
+  await page.route('**/api/settings', (route) =>
+    route.fulfill({
+      json: {
+        configured: true,
+        models: [fixture.model],
+        defaultModel: fixture.model,
+        templates: [fixture.templates.cv],
+        templateWarnings: [],
+        modelWarning: null,
+        profile: { name: 'Dan Edington', source: 'career.json', roleCount: 7 },
+      },
+    }),
+  );
+  await page.route('**/api/applications', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 201, json: { ...fixture, url: '' } })
+      : route.fulfill({ json: [] }),
+  );
+  await page.route('**/api/applications/test-application', (route) =>
+    route.fulfill({ json: { ...fixture, url: '' } }),
+  );
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: 'Have the description instead?' })
+    .click();
+  await page
+    .getByLabel('Job description')
+    .fill(
+      'Example Studio is hiring a frontend engineer to build accessible React and TypeScript applications, collaborating with designers and backend engineers.',
+    );
+  await page
+    .getByRole('button', { name: 'Generate application', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Example Studio', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Original job posting' }),
+  ).toHaveCount(0);
+  const repositoryLink = page.getByRole('link', {
+    name: 'https://github.com/dan-edington/TonyGL',
+  });
+  await expect(repositoryLink).toHaveAttribute(
+    'href',
+    'https://github.com/dan-edington/TonyGL',
+  );
+});
+
+for (const selection of ['cv', 'coverLetter'] as const) {
+  test(`generates, revises and reopens ${selection} alone, then changes the selection`, async ({
+    page,
+  }) => {
+    let draft: Application | null = null;
+    const other = selection === 'cv' ? 'coverLetter' : 'cv';
+    const label = selection === 'cv' ? 'Tailored CV' : 'Cover letter';
+    const otherLabel = selection === 'cv' ? 'Cover letter' : 'Tailored CV';
+
+    function documents(kind: 'cv' | 'coverLetter') {
+      const { cv, coverLetter, ...shared } = fixture.documents;
+      return { ...shared, ...(kind === 'cv' ? { cv } : { coverLetter }) };
+    }
+
+    await page.route('**/api/settings', (route) =>
+      route.fulfill({
+        json: {
+          configured: true,
+          models: [fixture.model],
+          defaultModel: fixture.model,
+          templates: [fixture.templates.cv],
+          templateWarnings: [],
+          modelWarning: null,
+          profile: {
+            name: 'Dan Edington',
+            source: 'career.json',
+            roleCount: 7,
+          },
+        },
+      }),
+    );
+    await page.route('**/api/applications', (route) => {
+      if (route.request().method() === 'POST') {
+        const input = route.request().postDataJSON();
+        expect(input.documentSelection).toBe(selection);
+        expect(input.coverLetterPersonalisation).toBe(
+          selection === 'cv' ? '' : 'I am a runner.',
+        );
+        draft = {
+          ...fixture,
+          documents: documents(selection),
+          applicant: {
+            name: fixture.documents.cv.name,
+            location: fixture.documents.cv.location,
+            contact: fixture.documents.cv.contact,
+          },
+          coverLetterPersonalisation: input.coverLetterPersonalisation,
+        };
+        return route.fulfill({ status: 201, json: draft });
+      }
+      return route.fulfill({
+        json: draft
+          ? [
+              {
+                id: draft.id,
+                title: draft.job.title,
+                company: draft.job.company,
+                version: draft.version,
+              },
+            ]
+          : [],
+      });
+    });
+    await page.route('**/api/applications/test-application', (route) =>
+      route.fulfill({ json: draft }),
+    );
+    await page.route('**/api/applications/test-application/revise', (route) => {
+      const input = route.request().postDataJSON();
+      if (selection === 'cv')
+        expect(input).not.toHaveProperty('coverLetterPersonalisation');
+      draft = { ...draft!, version: 2 };
+      return route.fulfill({ json: draft });
+    });
+    await page.route(
+      '**/api/applications/test-application/regenerate',
+      (route) => {
+        expect(route.request().postDataJSON().documentSelection).toBe(other);
+        draft = { ...draft!, version: 3, documents: documents(other) };
+        return route.fulfill({ json: draft });
+      },
+    );
+    await page.route('**/api/applications/test-application/pdf/**', (route) =>
+      route.fulfill({
+        contentType: 'application/pdf',
+        body: '%PDF-1.4\n%%EOF',
+      }),
+    );
+    await page.goto('/');
+    await page.getByLabel('Documents to generate').selectOption(selection);
+    await expect(
+      page.getByLabel(selection === 'cv' ? 'Letter template' : 'CV template', {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('region', { name: otherLabel, exact: true }),
+    ).toHaveCount(0);
+    if (selection === 'coverLetter')
+      await page
+        .getByLabel('Cover letter personalisation')
+        .fill('I am a runner.');
+    else
+      await expect(page.getByLabel('Cover letter personalisation')).toHaveCount(
+        0,
+      );
+    await page.getByLabel('Job posting URL').fill(fixture.url);
+    await page
+      .getByRole('button', { name: 'Generate application', exact: true })
+      .click();
+    const preview = page.getByRole('region', { name: label, exact: true });
+    await expect(preview.locator('.paper h2')).toHaveText(
+      fixture.documents.cv.name,
+    );
+    await expect(preview.locator('.paper-contact')).toContainText(
+      fixture.documents.cv.contact[0],
+    );
+    await expect(
+      page.getByRole('region', { name: otherLabel, exact: true }),
+    ).toHaveCount(0);
+    await page.getByLabel('Suggested changes').fill('Make this more concise.');
+    await page.getByRole('button', { name: 'Update previews' }).click();
+    await expect(
+      page.getByText('Revision 2 saved. Your previews are up to date.'),
+    ).toBeVisible();
+    const download = page.waitForEvent('download');
+    await page
+      .getByRole('button', { name: `Download ${label} as PDF` })
+      .click();
+    expect((await download).suggestedFilename()).toContain('Dan Edington');
+    await page.reload();
+    await expect(preview.locator('.paper h2')).toHaveText(
+      fixture.documents.cv.name,
+    );
+    await expect(
+      page.getByRole('region', { name: otherLabel, exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole('button', { name: 'Regenerate application', exact: true })
+      .click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByLabel('Documents to generate')).toHaveValue(
+      selection,
+    );
+    await dialog.getByLabel('Documents to generate').selectOption(other);
+    await dialog.getByRole('button', { name: 'Regenerate documents' }).click();
+    await expect(
+      page
+        .getByRole('region', { name: otherLabel, exact: true })
+        .locator('.paper h2'),
+    ).toHaveText(fixture.documents.cv.name);
+    await expect(preview).toHaveCount(0);
+  });
+}
+
 test('generates and revises previews, downloads PDFs, and reopens a saved draft', async ({
   page,
 }) => {
-  let draft: Application | null = null;
+  let draft: typeof fixture | null = null;
   await page.route('**/api/settings', async (route) => {
     await route.fulfill({
       json: {
@@ -170,9 +488,14 @@ test('generates and revises previews, downloads PDFs, and reopens a saved draft'
   });
   await expect(cvPreview.locator('.paper h3')).toHaveText([
     'Experience',
+    'Personal Projects',
     'Education',
     'Core Skills',
   ]);
+  await expect(
+    cvPreview.getByRole('heading', { name: 'TonyGL', exact: true }),
+  ).toBeVisible();
+  await expect(cvPreview.locator('.paper')).toHaveCSS('padding-left', '32px');
   const header = cvPreview.locator('.paper-cv-header');
   await expect(header).toHaveCSS('text-align', 'center');
   await expect(header.locator('.paper-location')).toHaveText(
@@ -365,7 +688,7 @@ test('shows fallback models with the budget default and explains an invalid key'
 test('regenerates a saved application safely and deletes it after confirmation', async ({
   page,
 }) => {
-  let draft: Application | null = structuredClone(fixture);
+  let draft: typeof fixture | null = structuredClone(fixture);
   let regenerationRequests = 0;
   let deletionRequests = 0;
   await page.route('**/api/settings', (route) =>

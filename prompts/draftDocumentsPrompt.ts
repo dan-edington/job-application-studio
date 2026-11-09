@@ -5,9 +5,9 @@
  *
  * Used as the task field of the JSON user payload in draftDocuments() in
  * server/services/agent.ts. The payload also contains the career master, job,
- * date, personalisation and template instructions. Both initial generation and
+ * requestedDocuments, date, relevant personalisation and template instructions. Both initial generation and
  * Regenerate application use this prompt; regeneration replaces the documents
  * rather than revising their existing wording.
  */
 export const draftDocumentsPrompt =
-  'Write the tailored CV, cover letter, evidence map, and cautions. Apply the critical per-role keyword coverage and bullet-order rules: combine each role’s confirmed keywords with its fuller achievements and place the most job-matching keywords in the earliest bullets.';
+  'Write only the documents listed in requestedDocuments, with their evidence map and cautions. If a CV is requested, apply the critical per-role keyword coverage and bullet-order rules: combine each role’s confirmed keywords with its fuller achievements and place the most job-matching keywords in the earliest bullets. If a cover letter is requested, write a complete tailored letter. Do not generate an unrequested document.';

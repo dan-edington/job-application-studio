@@ -9,18 +9,30 @@ import { config, AppError } from './config.js';
 import { ApplicationRepository } from './repository.js';
 import {
   generateSchema,
+  completeApplicationSchema,
   reviseSchema,
   regenerateSchema,
   deleteSchema,
   type Application,
 } from '../shared/schema.js';
+import { isMissingCompanyName } from '../shared/company-name.js';
+import {
+  PendingApplications,
+  type PreparedApplication,
+} from './services/pending-applications.js';
 import { ApplicationPdf } from '../shared/pdf.js';
+import { applicantDetails } from '../shared/cv-header.js';
+import { savedDocumentSelection } from '../shared/document-selection.js';
 import {
   documentQualityIssues,
   documentQualityMessage,
 } from '../shared/document-quality.js';
-import { loadCareer } from './services/career.js';
-import { loadTemplates, selectTemplate } from './services/templates.js';
+import { loadCareer, careerApplicant } from './services/career.js';
+import {
+  loadTemplates,
+  selectTemplate,
+  standardTemplate,
+} from './services/templates.js';
 import { listModels, validateModel } from './services/models.js';
 import { readJob } from './services/job.js';
 import {
@@ -33,6 +45,7 @@ export function createApp(
   repository = new ApplicationRepository(config.databasePath),
 ) {
   const app = express();
+  const pendingApplications = new PendingApplications();
   app.disable('x-powered-by');
   app.use(
     helmet({
@@ -119,20 +132,56 @@ export function createApp(
       readJob(input.url, input.jobText),
     ]);
     const templates = {
-      cv: selectTemplate(templateData.templates, input.cvTemplate, 'cv'),
-      coverLetter: selectTemplate(
-        templateData.templates,
-        input.letterTemplate,
-        'coverLetter',
-      ),
+      cv:
+        input.documentSelection === 'coverLetter'
+          ? standardTemplate
+          : selectTemplate(templateData.templates, input.cvTemplate, 'cv'),
+      coverLetter:
+        input.documentSelection === 'cv'
+          ? standardTemplate
+          : selectTemplate(
+              templateData.templates,
+              input.letterTemplate,
+              'coverLetter',
+            ),
     };
     const job = await analyseJob(jobText, input.model);
+    const prepared = { input, career, templates, job };
+    if (isMissingCompanyName(job.company)) {
+      res.status(202).json(pendingApplications.add(prepared));
+      return;
+    }
+    res.status(201).json(await savePreparedApplication(prepared));
+  });
+
+  app.post('/api/applications/complete', generationLimit, async (req, res) => {
+    const { token, companyName } = completeApplicationSchema.parse(req.body);
+    const application = await pendingApplications.complete(
+      token,
+      async (prepared) => {
+        await validateModel(prepared.input.model);
+        return savePreparedApplication({
+          ...prepared,
+          job: { ...prepared.job, company: companyName },
+        });
+      },
+    );
+    res.status(201).json(application);
+  });
+
+  async function savePreparedApplication({
+    input,
+    career,
+    templates,
+    job,
+  }: PreparedApplication): Promise<Application> {
     const documents = await draftDocuments(
       career,
       job,
       templates,
       input.model,
       input.coverLetterPersonalisation,
+      input.documentSelection,
     );
     const date = new Date().toISOString();
     const application: Application = {
@@ -145,11 +194,13 @@ export function createApp(
       version: 1,
       job,
       documents,
+      applicant: careerApplicant(career),
       templates,
       revisions: [],
     };
-    res.status(201).json(repository.create(application));
-  });
+    return repository.create(application);
+  }
+
   app.post(
     '/api/applications/:id/revise',
     generationLimit,
@@ -161,13 +212,16 @@ export function createApp(
           409,
           'This draft has changed. Reopen it before making another revision.',
         );
+      if (!application.documents.coverLetter && !input.instructions.trim())
+        throw new AppError(400, 'Add suggested changes to revise this CV.');
       await validateModel(input.model);
       const coverLetterPersonalisation =
         input.coverLetterPersonalisation ??
         application.coverLetterPersonalisation ??
         '';
+      const career = await loadCareer();
       const documents = await reviseDocuments(
-        await loadCareer(),
+        career,
         { ...application, coverLetterPersonalisation },
         input.instructions,
         input.model,
@@ -178,6 +232,7 @@ export function createApp(
           {
             ...application,
             documents,
+            applicant: careerApplicant(career),
             coverLetterPersonalisation,
             model: input.model,
             updatedAt: date,
@@ -213,18 +268,24 @@ export function createApp(
         input.coverLetterPersonalisation ??
         application.coverLetterPersonalisation ??
         '';
+      const career = await loadCareer();
+      const documentSelection =
+        input.documentSelection ??
+        savedDocumentSelection(application.documents);
       const documents = await draftDocuments(
-        await loadCareer(),
+        career,
         application.job,
         application.templates,
         input.model,
         coverLetterPersonalisation,
+        documentSelection,
       );
       res.json(
         repository.update(
           {
             ...application,
             documents,
+            applicant: careerApplicant(career),
             coverLetterPersonalisation,
             model: input.model,
             updatedAt: new Date().toISOString(),
@@ -241,11 +302,16 @@ export function createApp(
       throw new AppError(400, 'Unknown document type.');
     const application = repository.get(req.params.id);
     const kind = req.params.kind as 'cv' | 'coverLetter';
+    if (!application.documents[kind])
+      throw new AppError(
+        404,
+        'This application does not contain that document.',
+      );
     if (documentQualityIssues(application.documents, kind).length)
       throw new AppError(422, documentQualityMessage);
     const buffer = await renderToBuffer(ApplicationPdf({ application, kind }));
     const filename =
-      `${application.documents.cv.name}-${application.job.company}-${kind}`
+      `${applicantDetails(application).name}-${application.job.company}-${kind}`
         .replace(/[^a-z0-9-]/gi, '_')
         .slice(0, 150);
     res

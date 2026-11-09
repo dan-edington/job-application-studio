@@ -7,8 +7,9 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import type { Application } from '../../shared/schema';
-import { cvHeader } from '../../shared/cv-header';
+import { applicantDetails } from '../../shared/cv-header';
 import { formatEmploymentDate } from '../../shared/employment-dates';
+import { documentTheme } from '../../shared/document-theme';
 import {
   documentQualityIssues,
   documentQualityMessage,
@@ -27,8 +28,11 @@ export function DocumentPreview({
   const [downloading, setDownloading] = useState(false);
   const cv = application?.documents.cv;
   const letter = application?.documents.coverLetter;
-  const header = cv ? cvHeader(cv) : undefined;
-  const theme = application?.templates[kind].theme;
+  const header = application ? applicantDetails(application) : undefined;
+  const selectedDocument = application?.documents[kind];
+  const theme = application
+    ? documentTheme(application.templates[kind])
+    : undefined;
   const unfinished = application
     ? documentQualityIssues(application.documents, kind).length > 0
     : false;
@@ -48,7 +52,7 @@ export function DocumentPreview({
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download =
-        `${cv?.name}-${application?.job.company}-${kind}.pdf`.replace(
+        `${header?.name}-${application?.job.company}-${kind}.pdf`.replace(
           /[/\\]/g,
           '-',
         );
@@ -78,7 +82,7 @@ export function DocumentPreview({
         </div>
         <button
           className="download-button"
-          disabled={!application || unfinished || busy || downloading}
+          disabled={!selectedDocument || unfinished || busy || downloading}
           onClick={download}
           aria-label={`Download ${label} as PDF`}
         >
@@ -108,7 +112,7 @@ export function DocumentPreview({
         >
           {documentQualityMessage}
         </p>
-      ) : application && cv && letter ? (
+      ) : application && selectedDocument ? (
         <>
           <div
             className="document-scroll"
@@ -125,19 +129,20 @@ export function DocumentPreview({
                       ? 'Georgia, serif'
                       : 'Arial, sans-serif',
                   fontSize: `${theme?.fontSize || 10}pt`,
+                  padding: `${theme?.margin ?? 24}pt`,
                 } as React.CSSProperties
               }
             >
-              {kind === 'cv' ? (
+              {kind === 'cv' && cv ? (
                 <header className="paper-cv-header">
-                  <h2>{cv.name}</h2>
+                  <h2>{header?.name}</h2>
                   <p className="paper-headline">{cv.headline}</p>
                   <p className="paper-location">{header?.location}</p>
                   <p className="paper-contact">{header?.contact.join(' | ')}</p>
                 </header>
               ) : (
                 <>
-                  <h2>{cv.name}</h2>
+                  <h2>{header?.name}</h2>
                   <p className="paper-contact">
                     {[header?.location, ...(header?.contact || [])]
                       .filter(Boolean)
@@ -145,7 +150,7 @@ export function DocumentPreview({
                   </p>
                 </>
               )}
-              {kind === 'cv' ? (
+              {kind === 'cv' && cv ? (
                 <>
                   <h3>Experience</h3>
                   {cv.experience.map((role, i) => (
@@ -164,6 +169,24 @@ export function DocumentPreview({
                       </ul>
                     </section>
                   ))}
+                  {!!cv.personalProjects?.length && <h3>Personal Projects</h3>}
+                  {cv.personalProjects?.map((project) => (
+                    <section key={project.sourceId}>
+                      <h4>{project.name}</h4>
+                      <p>{project.description}</p>
+                      {project.repositoryUrl && (
+                        <p className="paper-project-link">
+                          <a
+                            href={project.repositoryUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {project.repositoryUrl}
+                          </a>
+                        </p>
+                      )}
+                    </section>
+                  ))}
                   {!!cv.education.length && <h3>Education</h3>}
                   {cv.education.map((entry, i) => (
                     <p key={i}>{entry}</p>
@@ -176,7 +199,7 @@ export function DocumentPreview({
                     </p>
                   ))}
                 </>
-              ) : (
+              ) : letter ? (
                 <div className="letter-content">
                   <p>{letter.date}</p>
                   <p>{letter.recipient}</p>
@@ -193,7 +216,7 @@ export function DocumentPreview({
                     {letter.name}
                   </p>
                 </div>
-              )}
+              ) : null}
             </article>
           </div>
           <div className="document-footer">

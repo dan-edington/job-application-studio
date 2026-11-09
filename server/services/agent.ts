@@ -2,7 +2,10 @@ import { jobAnalysisPrompt } from '../../prompts/jobAnalysisPrompt.js';
 import { draftDocumentsPrompt } from '../../prompts/draftDocumentsPrompt.js';
 import { reviseDocumentsPrompt } from '../../prompts/reviseDocumentsPrompt.js';
 import { repairDocumentsPrompt } from '../../prompts/repairDocumentsPrompt.js';
-import { selectedHeadlineGuidance } from '../../prompts/outputGuidance.js';
+import {
+  selectedHeadlineGuidance,
+  personalProjectsGuidance,
+} from '../../prompts/outputGuidance.js';
 import { generateText, Output } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
@@ -13,8 +16,13 @@ import {
   type Application,
   type Template,
   type Job,
-  type Documents,
+  type ApplicationDocuments,
+  type DocumentSelection,
 } from '../../shared/schema.js';
+import {
+  savedDocumentSelection,
+  selectedDocumentKinds,
+} from '../../shared/document-selection.js';
 import { enforceFacts, type Career } from './career.js';
 import { systemPrompt } from '../../prompts/systemPrompt.js';
 import { documentQualityIssues } from '../../shared/document-quality.js';
@@ -82,19 +90,22 @@ export async function draftDocuments(
   templates: Application['templates'],
   model: string,
   coverLetterPersonalisation = '',
-): Promise<Documents> {
+  documentSelection: DocumentSelection = 'both',
+): Promise<ApplicationDocuments> {
   return finishedDocuments(
     career,
     job,
     model,
     JSON.stringify({
       task: draftDocumentsPrompt,
-      coverLetterPersonalisation,
+      requestedDocuments: selectedDocumentKinds(documentSelection),
+      ...(documentSelection !== 'cv' ? { coverLetterPersonalisation } : {}),
       date: new Date().toLocaleDateString('en-GB', { dateStyle: 'long' }),
       career,
       job,
-      templates: templateInstructions(templates),
+      templates: templateInstructions(templates, documentSelection),
     }),
+    documentSelection,
   );
 }
 export async function reviseDocuments(
@@ -103,26 +114,43 @@ export async function reviseDocuments(
   instructions: string,
   model: string,
 ) {
+  const personalisationOnly = !instructions.trim();
+  if (personalisationOnly && !application.documents.coverLetter)
+    throw new AppError(400, 'Add suggested changes to revise this CV.');
+  const documentSelection = personalisationOnly
+    ? 'coverLetter'
+    : savedDocumentSelection(application.documents);
+  const currentDocuments = {
+    ...application.documents,
+    ...(personalisationOnly ? { cv: undefined } : {}),
+  };
   const result = await finishedDocuments(
     career,
     application.job,
     model,
     JSON.stringify({
       task: reviseDocumentsPrompt,
+      requestedDocuments: selectedDocumentKinds(documentSelection),
       career,
       job: application.job,
-      currentDocuments: application.documents,
+      currentDocuments,
       revisionHistory: application.revisions,
       requestedChanges: instructions,
-      coverLetterPersonalisation: application.coverLetterPersonalisation ?? '',
-      personalisationOnly: !instructions.trim(),
-      templates: templateInstructions(application.templates),
+      ...(documentSelection !== 'cv'
+        ? {
+            coverLetterPersonalisation:
+              application.coverLetterPersonalisation ?? '',
+          }
+        : {}),
+      personalisationOnly,
+      templates: templateInstructions(application.templates, documentSelection),
     }),
+    documentSelection,
   );
   // A personalisation-only update should not rewrite the candidate's CV.
-  return instructions.trim()
-    ? result
-    : { ...result, cv: structuredClone(application.documents.cv) };
+  return personalisationOnly && application.documents.cv
+    ? { ...result, cv: structuredClone(application.documents.cv) }
+    : result;
 }
 
 // One bounded repair attempt; never return or persist text that still fails checks.
@@ -131,17 +159,19 @@ async function finishedDocuments(
   job: Job,
   model: string,
   prompt: string,
-): Promise<Documents> {
+  documentSelection: DocumentSelection,
+): Promise<ApplicationDocuments> {
+  const schema = careerDocumentsSchema(career, documentSelection);
   let nextPrompt = prompt;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await structured(
-      careerDocumentsSchema(career),
+    const result = await structured<ApplicationDocuments>(
+      schema,
       model,
       nextPrompt,
       systemPrompt,
       attempt === 0 ? 'writing documents' : 'repairing documents',
     );
-    const documents = enforceFacts(result, career, job);
+    const documents = enforceFacts(schema.parse(result), career, job);
     const issues = documentQualityIssues(documents);
     if (!issues.length) return documents;
     nextPrompt = JSON.stringify({
@@ -160,22 +190,41 @@ async function finishedDocuments(
 }
 
 // Constrain selection to the actual master file, not a hardcoded set of job titles.
-function careerDocumentsSchema(career: Career) {
-  return documentsSchema.extend({
+function careerDocumentsSchema(career: Career, selection: DocumentSelection) {
+  const fullSchema = documentsSchema.extend({
     cv: documentsSchema.shape.cv.extend({
+      // Required for structured AI output; the default only supports old drafts.
+      personalProjects: z
+        .array(
+          documentsSchema.shape.cv.shape.personalProjects
+            .removeDefault()
+            .element.omit({ repositoryUrl: true }),
+        )
+        .max(5)
+        .describe(personalProjectsGuidance),
       headline: z
         .enum(career.personal.headlineOptions as [string, ...string[]])
         .describe(selectedHeadlineGuidance),
     }),
   });
+  // Omit unrequested fields entirely so the model spends no output tokens
+  // writing the other document. All remaining fields stay required by OpenAI.
+  if (selection === 'cv') return fullSchema.omit({ coverLetter: true });
+  if (selection === 'coverLetter') return fullSchema.omit({ cv: true });
+  return fullSchema;
 }
 
-function templateInstructions(templates: {
-  cv: Template;
-  coverLetter: Template;
-}) {
-  return {
-    cv: templates.cv.instructions,
-    coverLetter: templates.coverLetter.instructions,
-  };
+function templateInstructions(
+  templates: {
+    cv: Template;
+    coverLetter: Template;
+  },
+  selection: DocumentSelection,
+) {
+  return Object.fromEntries(
+    selectedDocumentKinds(selection).map((kind) => [
+      kind,
+      templates[kind].instructions,
+    ]),
+  );
 }

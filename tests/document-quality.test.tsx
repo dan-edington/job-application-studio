@@ -157,10 +157,32 @@ describe('generation quality gate', () => {
       fixture.templates,
       fixture.model,
     );
-    expect(result.coverLetter.paragraphs).toEqual(
+    expect(result.coverLetter!.paragraphs).toEqual(
       fixture.documents.coverLetter.paragraphs,
     );
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+  it('requires personal projects in the OpenAI output schema and includes the new rules in every writing flow', async () => {
+    const career = await loadCareer();
+    generate.mockResolvedValue({ output: fixture.documents });
+    await draftDocuments(career, fixture.job, fixture.templates, fixture.model);
+    await reviseDocuments(career, fixture, 'Tailor the CV.', fixture.model);
+    for (const [options] of generate.mock.calls) {
+      const format = await options.output.responseFormat;
+      const cv = format.schema.properties.cv;
+      expect(cv.required).toContain('personalProjects');
+      expect(cv.properties.personalProjects).not.toHaveProperty('default');
+      expect(cv.properties.personalProjects.items.required).toEqual([
+        'sourceId',
+        'name',
+        'description',
+      ]);
+      expect(options.system).toContain(
+        'Experience, Personal Projects, Education, Core Skills',
+      );
+      expect(options.system).toContain('not a fixed exclusion list');
+      expect(options.system).toContain('across ALL categories');
+    }
   });
   it.each(['draft', 'revision'])(
     'repairs a malformed %s with the original facts and validates the replacement',
@@ -183,7 +205,7 @@ describe('generation quality gate', () => {
               'Shorten the letter.',
               fixture.model,
             );
-      expect(result.coverLetter.paragraphs).toEqual(
+      expect(result.coverLetter!.paragraphs).toEqual(
         fixture.documents.coverLetter.paragraphs,
       );
       expect(generate).toHaveBeenCalledTimes(2);

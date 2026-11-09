@@ -133,6 +133,7 @@ describe('regenerate application', () => {
       original.templates,
       'gpt-5-nano',
       '',
+      'both',
     );
     expect(analyseJob).not.toHaveBeenCalled();
     expect(reviseDocuments).not.toHaveBeenCalled();

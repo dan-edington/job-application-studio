@@ -49,6 +49,7 @@ describe('cover-letter personalisation', () => {
       expect.any(Object),
       fixture.model,
       notes,
+      'both',
     );
     expect(
       (await request(app).get(`/api/applications/${response.body.id}`)).body
@@ -75,6 +76,7 @@ describe('cover-letter personalisation', () => {
           fixture.templates,
           fixture.model,
           notes,
+          'both',
         );
       else
         expect(reviseDocuments).toHaveBeenLastCalledWith(
@@ -99,6 +101,7 @@ describe('cover-letter personalisation', () => {
           fixture.templates,
           fixture.model,
           '',
+          'both',
         );
       else
         expect(reviseDocuments).toHaveBeenLastCalledWith(

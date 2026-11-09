@@ -19,8 +19,8 @@ function textNodes(node: ReactNode): string[] {
     : [];
 }
 
-function legacyApplication(): Application {
-  const { location, ...cv } = fixture.documents.cv;
+function legacyApplication(): typeof fixture {
+  const { location, personalProjects, ...cv } = fixture.documents.cv;
   return {
     ...fixture,
     documents: {
@@ -38,7 +38,7 @@ function legacyApplication(): Application {
         ],
       },
     },
-  } as unknown as Application;
+  } as unknown as typeof fixture;
 }
 
 describe('CV layout and stored-document compatibility', () => {
@@ -115,7 +115,11 @@ describe('CV layout and stored-document compatibility', () => {
         $('.paper h3')
           .map((_i, element) => $(element).text())
           .get(),
-      ).toEqual(['Experience', 'Education', 'Core Skills']);
+      ).toEqual(
+        application.documents.cv.personalProjects?.length
+          ? ['Experience', 'Personal Projects', 'Education', 'Core Skills']
+          : ['Experience', 'Education', 'Core Skills'],
+      );
       expect(
         $('.paper-cv-header')
           .children()
@@ -150,6 +154,39 @@ describe('CV layout and stored-document compatibility', () => {
     );
     expect(nodes).not.toContain('LEGACY PROFILE CONTENT');
     expect(nodes).not.toContain('LEGACY PROJECT');
+  });
+
+  it('places TonyGL between Experience and Education in previews and PDFs', () => {
+    const $ = load(
+      renderToStaticMarkup(
+        <DocumentPreview
+          application={fixture}
+          kind="cv"
+          busy={false}
+        />,
+      ),
+    );
+    const project = fixture.documents.cv.personalProjects[0];
+    expect($('.paper').text()).toContain(project.description);
+    expect($('.paper h4').last().text()).toBe('TonyGL');
+    expect($('.paper-project-link a').attr('href')).toBe(project.repositoryUrl);
+    expect($('.paper-project-link').text()).toBe(project.repositoryUrl);
+    const nodes = textNodes(
+      ApplicationPdf({ application: fixture, kind: 'cv' }),
+    );
+    expect(nodes.indexOf('Personal Projects')).toBeGreaterThan(
+      nodes.indexOf('Experience'),
+    );
+    expect(nodes.indexOf('TonyGL')).toBeGreaterThan(
+      nodes.indexOf('Personal Projects'),
+    );
+    expect(nodes.indexOf(project.description)).toBeLessThan(
+      nodes.indexOf('Education'),
+    );
+    expect(nodes.indexOf('Education')).toBeLessThan(
+      nodes.indexOf('Core Skills'),
+    );
+    expect(nodes).toContain(project.repositoryUrl);
   });
 
   it('preserves the cover-letter contact information across both storage formats', () => {

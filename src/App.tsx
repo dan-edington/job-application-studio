@@ -20,11 +20,22 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
-import type { Application, ApplicationSummary } from '../shared/schema';
+import type {
+  Application,
+  ApplicationSummary,
+  CompanyNameRequest,
+  DocumentSelection as Selection,
+} from '../shared/schema';
 import { api } from './lib/api';
+import {
+  selectedDocumentKinds,
+  savedDocumentSelection,
+} from '../shared/document-selection';
+import { DocumentSelection } from './components/DocumentSelection';
 import { useStudio } from './store';
 import { DocumentPreview } from './components/DocumentPreview';
 import { Modal } from './components/Modal';
+import { CompanyNameDialog } from './components/CompanyNameDialog';
 import { ApplicationActionDialog } from './components/ApplicationActionDialog';
 import { CoverLetterPersonalisation } from './components/CoverLetterPersonalisation';
 
@@ -39,6 +50,8 @@ export function App() {
   >(null);
   const [help, setHelp] = useState(false);
   const [notice, setNotice] = useState('');
+  const [companyRequest, setCompanyRequest] =
+    useState<CompanyNameRequest | null>(null);
   const settings = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings,
@@ -57,8 +70,13 @@ export function App() {
   const model = settings.data?.models.includes(state.model)
     ? state.model
     : settings.data?.defaultModel || '';
+  const selection = application
+    ? savedDocumentSelection(application.documents)
+    : state.documentSelection;
+  const documentKinds = selectedDocumentKinds(selection);
+  const hasLetter = selection !== 'cv';
   const personalisationChanged =
-    !!application &&
+    !!application?.documents.coverLetter &&
     savedPersonalisation.trim() !==
       (application.coverLetterPersonalisation || '');
 
@@ -69,14 +87,32 @@ export function App() {
     void client.invalidateQueries({ queryKey: ['applications'] });
   }
 
+  function generationSaved(app: Application) {
+    saved(app);
+    setCompanyRequest(null);
+    setNotice(
+      'Your application is ready. Review the documents and refine anything you like.',
+    );
+    setInstructions('');
+  }
+
+  const completeGeneration = useMutation({
+    mutationFn: ({
+      token,
+      companyName,
+    }: {
+      token: string;
+      companyName: string;
+    }) => api.completeApplication(token, companyName),
+    onSuccess: generationSaved,
+  });
   const generate = useMutation({
     mutationFn: api.generate,
-    onSuccess: (app) => {
-      saved(app);
-      setNotice(
-        'Your application is ready. Review the documents and refine anything you like.',
-      );
-      setInstructions('');
+    onSuccess: (result) => {
+      if ('status' in result) {
+        completeGeneration.reset();
+        setCompanyRequest(result);
+      } else generationSaved(result);
     },
     onError: () => setShowPaste(true),
   });
@@ -87,12 +123,12 @@ export function App() {
         instructions,
         model,
         application!.version,
-        savedPersonalisation,
+        hasLetter ? savedPersonalisation : undefined,
       ),
     onSuccess: (app) => {
       saved(app);
       setInstructions('');
-      setNotice(`Revision ${app.version} saved. Both previews are up to date.`);
+      setNotice(`Revision ${app.version} saved. Your previews are up to date.`);
     },
   });
   const regenerate = useMutation({
@@ -101,18 +137,27 @@ export function App() {
       selectedModel,
       version,
       personalisation,
+      documentSelection,
     }: {
       id: string;
       selectedModel: string;
       version: number;
       personalisation: string;
-    }) => api.regenerate(id, selectedModel, version, personalisation),
+      documentSelection: Selection;
+    }) =>
+      api.regenerate(
+        id,
+        selectedModel,
+        version,
+        personalisation,
+        documentSelection,
+      ),
     onSuccess: (app) => {
       saved(app);
       setInstructions('');
       setActionDialog(null);
       setNotice(
-        `Application regenerated as version ${app.version}. Both documents are ready to review.`,
+        `Application regenerated as version ${app.version}. Your selected documents are ready to review.`,
       );
     },
   });
@@ -137,6 +182,7 @@ export function App() {
   });
   const busy =
     generate.isPending ||
+    completeGeneration.isPending ||
     revise.isPending ||
     regenerate.isPending ||
     remove.isPending;
@@ -148,6 +194,8 @@ export function App() {
   }, [application?.id, application?.coverLetterPersonalisation]);
 
   function newApplication() {
+    setCompanyRequest(null);
+    completeGeneration.reset();
     state.newApplication();
     generate.reset();
     revise.reset();
@@ -159,6 +207,8 @@ export function App() {
   }
 
   function openApplication(id: string) {
+    setCompanyRequest(null);
+    completeGeneration.reset();
     state.set({ activeId: id });
     generate.reset();
     revise.reset();
@@ -292,7 +342,7 @@ export function App() {
               <p className="page-description">
                 {application
                   ? application.job.title
-                  : 'Turn a job posting into a CV and cover letter that tell the right story.'}
+                  : 'Turn a job posting into a tailored CV, cover letter, or both.'}
               </p>
             </div>
             <span
@@ -399,13 +449,15 @@ export function App() {
                   setNotice('');
                   revise.reset();
                   generate.mutate({
+                    documentSelection: state.documentSelection,
                     url: state.url,
                     jobText: state.jobText,
                     model,
                     cvTemplate: state.cvTemplate,
                     letterTemplate: state.letterTemplate,
-                    coverLetterPersonalisation:
-                      state.coverLetterPersonalisation,
+                    coverLetterPersonalisation: hasLetter
+                      ? state.coverLetterPersonalisation
+                      : '',
                   });
                 }}
               >
@@ -432,7 +484,6 @@ export function App() {
                   <input
                     id="job-url"
                     type="url"
-                    required
                     placeholder="https://company.com/careers/your-next-role"
                     value={state.url}
                     disabled={busy}
@@ -471,17 +522,27 @@ export function App() {
                       placeholder="Paste the full role description, including responsibilities and requirements…"
                     />
                     <p className="field-hint">
-                      Keep the original job URL above as a reference.
+                      No URL needed. Paste at least 100 characters; a URL is
+                      optional as a reference.
                     </p>
                   </div>
                 )}
-                <CoverLetterPersonalisation
-                  value={state.coverLetterPersonalisation}
-                  onChange={(value) =>
-                    state.set({ coverLetterPersonalisation: value })
+                <DocumentSelection
+                  value={state.documentSelection}
+                  onChange={(documentSelection) =>
+                    state.set({ documentSelection })
                   }
                   disabled={busy}
                 />
+                {hasLetter && (
+                  <CoverLetterPersonalisation
+                    value={state.coverLetterPersonalisation}
+                    onChange={(value) =>
+                      state.set({ coverLetterPersonalisation: value })
+                    }
+                    disabled={busy}
+                  />
+                )}
                 <div className="form-divider" />
                 <div className="select-grid">
                   <div>
@@ -514,60 +575,64 @@ export function App() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label
-                      className="field-label"
-                      htmlFor="cv-template"
-                    >
-                      CV template
-                    </label>
-                    <select
-                      id="cv-template"
-                      value={state.cvTemplate}
-                      disabled={busy}
-                      onChange={(e) =>
-                        state.set({ cvTemplate: e.target.value })
-                      }
-                    >
-                      {settings.data?.templates
-                        .filter((t) => t.kind !== 'coverLetter')
-                        .map((t) => (
-                          <option
-                            key={t.id}
-                            value={t.id}
-                          >
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      className="field-label"
-                      htmlFor="letter-template"
-                    >
-                      Letter template
-                    </label>
-                    <select
-                      id="letter-template"
-                      value={state.letterTemplate}
-                      disabled={busy}
-                      onChange={(e) =>
-                        state.set({ letterTemplate: e.target.value })
-                      }
-                    >
-                      {settings.data?.templates
-                        .filter((t) => t.kind !== 'cv')
-                        .map((t) => (
-                          <option
-                            key={t.id}
-                            value={t.id}
-                          >
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                  {selection !== 'coverLetter' && (
+                    <div>
+                      <label
+                        className="field-label"
+                        htmlFor="cv-template"
+                      >
+                        CV template
+                      </label>
+                      <select
+                        id="cv-template"
+                        value={state.cvTemplate}
+                        disabled={busy}
+                        onChange={(e) =>
+                          state.set({ cvTemplate: e.target.value })
+                        }
+                      >
+                        {settings.data?.templates
+                          .filter((t) => t.kind !== 'coverLetter')
+                          .map((t) => (
+                            <option
+                              key={t.id}
+                              value={t.id}
+                            >
+                              {t.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                  {hasLetter && (
+                    <div>
+                      <label
+                        className="field-label"
+                        htmlFor="letter-template"
+                      >
+                        Letter template
+                      </label>
+                      <select
+                        id="letter-template"
+                        value={state.letterTemplate}
+                        disabled={busy}
+                        onChange={(e) =>
+                          state.set({ letterTemplate: e.target.value })
+                        }
+                      >
+                        {settings.data?.templates
+                          .filter((t) => t.kind !== 'cv')
+                          .map((t) => (
+                            <option
+                              key={t.id}
+                              value={t.id}
+                            >
+                              {t.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="generate-row">
                   <span>
@@ -581,7 +646,7 @@ export function App() {
                       busy ||
                       !model ||
                       !settings.data?.configured ||
-                      !state.url.trim()
+                      (!state.url.trim() && state.jobText.trim().length < 100)
                     }
                   >
                     {generate.isPending ? (
@@ -646,13 +711,15 @@ export function App() {
                   <span /> SAVED APPLICATION
                 </span>
                 <p>{application.job.summary}</p>
-                <a
-                  href={application.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Original job posting <ArrowUpRight size={13} />
-                </a>
+                {application.url && (
+                  <a
+                    href={application.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Original job posting <ArrowUpRight size={13} />
+                  </a>
+                )}
               </div>
               <div className="saved-meta">
                 <span>Version {application.version}</span>
@@ -705,10 +772,10 @@ export function App() {
                 className="animate-spin"
               />
               <span>
-                {generate.isPending
+                {generate.isPending || completeGeneration.isPending
                   ? 'Reading the role and writing your documents. This can take a few minutes.'
                   : regenerate.isPending
-                    ? 'Regenerating both documents. Your saved application is kept until generation succeeds.'
+                    ? 'Regenerating your selected documents. Your saved application is kept until generation succeeds.'
                     : remove.isPending
                       ? 'Deleting application…'
                       : 'Applying your changes. Your current documents stay available until the revision is saved.'}
@@ -730,7 +797,11 @@ export function App() {
               <span>
                 {application
                   ? 'Review your drafts, then add your finishing touches.'
-                  : 'Two documents. One consistent story.'}
+                  : selection === 'both'
+                    ? 'Two documents. One consistent story.'
+                    : selection === 'cv'
+                      ? 'A CV tailored to this role.'
+                      : 'A cover letter tailored to this role.'}
               </span>
             </div>
             <span className="draft-badge">
@@ -739,19 +810,17 @@ export function App() {
             </span>
           </div>
           <div
-            className="previews-grid"
+            className={`previews-grid ${documentKinds.length === 1 ? 'single-document' : ''}`}
             aria-busy={busy}
           >
-            <DocumentPreview
-              application={application}
-              kind="cv"
-              busy={busy}
-            />
-            <DocumentPreview
-              application={application}
-              kind="coverLetter"
-              busy={busy}
-            />
+            {documentKinds.map((kind) => (
+              <DocumentPreview
+                key={kind}
+                application={application}
+                kind={kind}
+                busy={busy}
+              />
+            ))}
           </div>
           {application && (
             <>
@@ -771,17 +840,19 @@ export function App() {
                   <div>
                     <h2>A little fine-tuning?</h2>
                     <p>
-                      Tell the agent what to change. Both previews will update
+                      Tell the agent what to change. Your previews will update
                       when it’s done.
                     </p>
                   </div>
                 </div>
-                <CoverLetterPersonalisation
-                  value={savedPersonalisation}
-                  onChange={setSavedPersonalisation}
-                  disabled={busy}
-                  saved
-                />
+                {hasLetter && (
+                  <CoverLetterPersonalisation
+                    value={savedPersonalisation}
+                    onChange={setSavedPersonalisation}
+                    disabled={busy}
+                    saved
+                  />
+                )}
                 <label
                   className="field-label mt-4"
                   htmlFor="revision"
@@ -796,7 +867,11 @@ export function App() {
                   minLength={3}
                   maxLength={6000}
                   rows={3}
-                  placeholder="e.g. Lead each relevant experience entry with React and TypeScript, explain the practical outcomes, and shorten the cover letter."
+                  placeholder={
+                    selection === 'coverLetter'
+                      ? 'e.g. Shorten the opening paragraph and emphasise my relevant project work.'
+                      : 'e.g. Lead each relevant experience entry with React and TypeScript and explain the practical outcomes.'
+                  }
                 />
                 <div className="revision-footer">
                   <label>
@@ -902,6 +977,24 @@ export function App() {
           </footer>
         </div>
       </main>
+      {companyRequest && (
+        <CompanyNameDialog
+          jobTitle={companyRequest.jobTitle}
+          pending={completeGeneration.isPending}
+          error={completeGeneration.error}
+          onConfirm={(companyName) =>
+            completeGeneration.mutate({
+              token: companyRequest.token,
+              companyName,
+            })
+          }
+          onClose={() => {
+            setCompanyRequest(null);
+            completeGeneration.reset();
+            generate.reset();
+          }}
+        />
+      )}
       {actionDialog && application && (
         <ApplicationActionDialog
           action={actionDialog}
@@ -916,7 +1009,7 @@ export function App() {
             setActionDialog(null);
             if (remove.error || regenerate.error) void current.refetch();
           }}
-          onConfirm={() => {
+          onConfirm={(documentSelection) => {
             setNotice('');
             if (actionDialog === 'delete')
               remove.mutate({
@@ -929,6 +1022,7 @@ export function App() {
                 selectedModel: model,
                 version: application.version,
                 personalisation: savedPersonalisation,
+                documentSelection,
               });
           }}
         />
@@ -967,15 +1061,17 @@ export function App() {
               <li>
                 <strong>Add the role</strong>
                 <p>
-                  Paste a public job URL and choose a model. If a page blocks
-                  access, paste its job description too.
+                  Paste a public job URL or the full job description, choose
+                  which documents to generate and select a model. If the company
+                  is unnamed, we’ll ask for its name before writing your
+                  documents.
                 </p>
               </li>
               <li>
                 <strong>Make it yours</strong>
                 <p>
-                  Review both drafts and their evidence notes. Request changes,
-                  then download each document as a PDF.
+                  Review your selected documents and their evidence notes.
+                  Request changes, then download each document as a PDF.
                 </p>
               </li>
             </ol>

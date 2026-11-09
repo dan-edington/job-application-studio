@@ -1,7 +1,15 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  Link,
+  StyleSheet,
+} from '@react-pdf/renderer';
 import type { Application } from './schema.js';
-import { cvHeader } from './cv-header.js';
+import { applicantDetails } from './cv-header.js';
 import { formatEmploymentDate } from './employment-dates.js';
+import { documentTheme } from './document-theme.js';
 
 export function ApplicationPdf({
   application,
@@ -10,11 +18,11 @@ export function ApplicationPdf({
   application: Application;
   kind: 'cv' | 'coverLetter';
 }) {
-  const theme = application.templates[kind].theme;
+  const theme = documentTheme(application.templates[kind]);
   const s = StyleSheet.create({
     page: {
       padding: theme.margin,
-      paddingBottom: 48,
+      paddingBottom: Math.max(theme.margin, 36),
       fontFamily: theme.fontFamily,
       fontSize: theme.fontSize,
       lineHeight: 1.45,
@@ -22,12 +30,14 @@ export function ApplicationPdf({
     },
     name: {
       fontSize: 25,
+      // React PDF inherits the resolved body line height, not its multiplier.
+      // Give the larger name enough vertical space before the following line.
+      lineHeight: 1.15,
       fontWeight: 'bold',
       color: theme.accent,
-      marginBottom: 4,
-      lineHeight: 1.45,
+      marginBottom: 2,
     },
-    headline: { fontSize: 12, marginBottom: 4 },
+    headline: { fontSize: 12, lineHeight: 1.25, marginBottom: 4 },
     location: { fontSize: 9, color: '#58615e', marginBottom: 6 },
     contact: { fontSize: 8, color: '#58615e', marginBottom: 14 },
     cvHeader: { textAlign: 'center' },
@@ -49,6 +59,12 @@ export function ApplicationPdf({
     dot: { width: 11 },
     bulletText: { flex: 1 },
     paragraph: { marginBottom: 12 },
+    projectLink: {
+      fontSize: 8,
+      lineHeight: 1.25,
+      color: theme.accent,
+      marginTop: 2,
+    },
     footer: {
       position: 'absolute',
       bottom: 23,
@@ -61,30 +77,32 @@ export function ApplicationPdf({
   });
   const cv = application.documents.cv;
   const letter = application.documents.coverLetter;
-  const header = cvHeader(cv);
+  if (!application.documents[kind])
+    throw new Error('The requested document is unavailable.');
+  const header = applicantDetails(application);
   return (
     <Document
-      title={`${cv.name} - ${kind === 'cv' ? 'CV' : 'Cover letter'} - ${application.job.company}`}
-      author={cv.name}
+      title={`${header.name} - ${kind === 'cv' ? 'CV' : 'Cover letter'} - ${application.job.company}`}
+      author={header.name}
     >
       <Page
         size="A4"
         style={s.page}
         wrap
       >
-        {kind === 'cv' ? (
+        {kind === 'cv' && cv ? (
           <View
             style={s.cvHeader}
             wrap={false}
           >
-            <Text style={s.name}>{cv.name}</Text>
+            <Text style={s.name}>{header.name}</Text>
             <Text style={s.headline}>{cv.headline}</Text>
             <Text style={s.location}>{header.location}</Text>
             <Text style={s.contact}>{header.contact.join(' | ')}</Text>
           </View>
         ) : (
           <>
-            <Text style={s.name}>{cv.name}</Text>
+            <Text style={s.name}>{header.name}</Text>
             <Text style={s.contact}>
               {[header.location, ...header.contact]
                 .filter(Boolean)
@@ -92,7 +110,7 @@ export function ApplicationPdf({
             </Text>
           </>
         )}
-        {kind === 'cv' ? (
+        {kind === 'cv' && cv ? (
           <>
             <Text
               style={s.section}
@@ -124,6 +142,32 @@ export function ApplicationPdf({
                     <Text style={s.bulletText}>{bullet}</Text>
                   </View>
                 ))}
+              </View>
+            ))}
+            {!!cv.personalProjects?.length && (
+              <Text
+                style={s.section}
+                minPresenceAhead={50}
+              >
+                Personal Projects
+              </Text>
+            )}
+            {cv.personalProjects?.map((project) => (
+              <View
+                key={project.sourceId}
+                style={{ marginBottom: 6 }}
+                wrap={false}
+              >
+                <Text style={s.role}>{project.name}</Text>
+                <Text>{project.description}</Text>
+                {project.repositoryUrl && (
+                  <Link
+                    src={project.repositoryUrl}
+                    style={s.projectLink}
+                  >
+                    {project.repositoryUrl}
+                  </Link>
+                )}
               </View>
             ))}
             {cv.education.length > 0 && (
@@ -158,7 +202,7 @@ export function ApplicationPdf({
               </Text>
             ))}
           </>
-        ) : (
+        ) : letter ? (
           <>
             <Text style={s.paragraph}>{letter.date}</Text>
             <Text style={s.paragraph}>{letter.recipient}</Text>
@@ -175,7 +219,7 @@ export function ApplicationPdf({
             <Text>{letter.signoff}</Text>
             <Text style={{ marginTop: 6 }}>{letter.name}</Text>
           </>
-        )}
+        ) : null}
         <Text
           fixed
           style={s.footer}

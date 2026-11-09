@@ -1596,3 +1596,24 @@ select,
 .action-model {
   margin-top: 20px;
 }
+
+.document-selection {
+  margin: 16px 0;
+}
+.company-name-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #dce2d5;
+  border-radius: 6px;
+  background: #fcfdfa;
+  color: #3d5339;
+}
+.paper-project-link {
+  font-size: 8pt;
+  color: var(--document-accent);
+  text-decoration: underline;
+}
+.previews-grid.single-document {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 800px;
+}

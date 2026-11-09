@@ -3,6 +3,8 @@ import type {
   ApplicationSummary,
   GenerateInput,
   Settings,
+  DocumentSelection,
+  GenerateResult,
 } from '../../shared/schema';
 
 async function request<T>(
@@ -28,7 +30,9 @@ export const api = {
   applications: () => request<ApplicationSummary[]>('/applications'),
   application: (id: string) => request<Application>(`/applications/${id}`),
   generate: (input: GenerateInput) =>
-    request<Application>('/applications', input),
+    request<GenerateResult>('/applications', input),
+  completeApplication: (token: string, companyName: string) =>
+    request<Application>('/applications/complete', { token, companyName }),
   revise: (
     id: string,
     instructions: string,
@@ -47,8 +51,10 @@ export const api = {
     model: string,
     version: number,
     coverLetterPersonalisation?: string,
+    documentSelection?: DocumentSelection,
   ) =>
     request<Application>(`/applications/${id}/regenerate`, {
+      documentSelection,
       model,
       version,
       coverLetterPersonalisation,

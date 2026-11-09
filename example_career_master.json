@@ -1,0 +1,131 @@
+{
+  "schemaVersion": null,
+  "lastCompiled": null,
+  "purpose": null,
+  "personal": {
+    "fullName": null,
+    "preferredName": null,
+    "location": {
+      "city": null,
+      "country": null
+    },
+    "email": null,
+    "phone": null,
+    "links": {
+      "website": null,
+      "linkedin": null,
+      "github": null
+    },
+    "headlineOptions": [],
+    "careerStartYear": null,
+    "education": [
+      {
+        "qualification": null,
+        "subject": null,
+        "result": null,
+        "institution": null,
+        "start": null,
+        "end": null
+      },
+      {
+        "qualification": null,
+        "subjects": [],
+        "grades": null,
+        "institution": null,
+        "end": null,
+        "optional": null
+      }
+    ]
+  },
+  "careerPreferences": {
+    "preferredRoles": [],
+    "employmentType": null,
+    "locations": [],
+    "salaryTargetGBP": null,
+    "salaryMinimumGBP": null,
+    "salaryTargetNote": null,
+    "excludedIndustries": []
+  },
+  "skills": {
+    "languages": [],
+    "frontend": [],
+    "stateAndAPIs": [],
+    "backendAndData": [],
+    "creativeAnd3D": [],
+    "testingQualityAccessibility": [],
+    "toolsAndBuild": [],
+    "cloudAndInfrastructure": [],
+    "cms": [],
+    "designAndProduction": [],
+    "engineeringConcepts": [],
+    "collaborationAndLeadership": []
+  },
+  "employment": [
+    {
+      "id": null,
+      "employer": null,
+      "title": null,
+      "start": null,
+      "end": null,
+      "context": null,
+      "responsibilitiesAndAchievements": [],
+      "keywords": []
+    },
+    {
+      "id": null,
+      "employer": null,
+      "title": null,
+      "start": null,
+      "end": null,
+      "employersKnown": [],
+      "context": null,
+      "responsibilitiesAndAchievements": [],
+      "keywords": []
+    }
+  ],
+  "personalProjects": [
+    {
+      "id": null,
+      "name": null,
+      "category": null,
+      "status": null,
+      "description": null,
+      "features": [],
+      "technologies": [],
+      "repositoryUrl": null
+    }
+  ],
+  "selectedClients": [],
+  "clientAttributionNote": null,
+  "examplesForInterviewsAndCoverLetters": [
+    {
+      "id": null,
+      "theme": [],
+      "situation": null,
+      "action": null,
+      "result": null,
+      "usage": null
+    },
+    {
+      "id": null,
+      "theme": [],
+      "situation": null,
+      "action": null,
+      "result": null
+    }
+  ],
+  "writingPreferences": {
+    "locale": null,
+    "voice": null,
+    "avoid": [],
+    "cvPrinciples": [],
+    "coverLetterPrinciples": []
+  },
+  "generationRules": {
+    "truthPriority": null,
+    "allowedTransformations": [],
+    "prohibitedTransformations": [],
+    "recommendedOutputs": []
+  },
+  "needsVerification": []
+}
